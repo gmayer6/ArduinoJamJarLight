@@ -1,6 +1,8 @@
 // This AccelerationLamp code by Greg Mayer is licensed under a Creative Commons Attribution 4.0 International License.
+// Some portions of this program is based on code made available by Adafruit
 // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ 
 #include <Wire.h>     // 
+#include <Time.h>
 #include <LSM303.h>   // for the LSM
 #include <Adafruit_NeoPixel.h> // for the Neo Pixel strip
 LSM303 lsm;     // something for the LSM
@@ -10,16 +12,15 @@ LSM303 lsm;     // something for the LSM
 // GLOBAL VARIABLES
 int NPixels = 30; // Number of pixels in neo pixel strip (some have more than 30)
 int MagInt1 = 0;
-int MagInt2 = 0;
-int MagInt3 = 0;
 float MagFloat = 0.0;
 char report[80];
 int NElements = 300;
 float MagArray[300]; // float arrays for x-mag
-int On = 1;
+int LightsOn = 0;
 // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ 
 // ACCEL DATA NORMALIZATIONS
-float AThresh = 1.4;  // Acceleration threshold for switching lights on/off
+float OffThreshold = 0.075;
+float AThresh = 1.65;  // Acceleration threshold for switching lights on/off
 float AN; // Normalized acceleration
 // Maximum and minimum accelrations recorded by the LSM303. These values may be specific to your device but can be read off from the serial monitor using the LSM303 Test sketch. 
 float AXMin = -16000;
@@ -73,54 +74,28 @@ void setup() {
   for (int N=0; N < NElements; N++) {
     MagArray[N]=0.0;
   }
+  LightsOn = 0; // initially, all lights are off
+
 }
 // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ 
 void loop() {
-  if (On == 0){
+
+  if (LightsOn == 0){ // set all lights to off
     for(int i=0; i<strip.numPixels(); i++) {    
       strip.setPixelColor(i, strip.Color(0, 0, 0));
     }  
-    strip.show(); 
-  }
-  AN = Acceleration();
-  if (AN >= AThresh) {
-    if (On == 0) {
-      On = 1;
-      rainbowcompass(0,0,0);     
-      delay(2000);
-    }
-    else {
-      On = 0;
-      delay(2000);
-    }
+    strip.show(); // set lights to off
   }
 
-  if (On == 1) {
+  LightsOn = LightSwitch(LightsOn);
 
-    MagFloat = 0.0;
-    lsm.read(); // update LSM reading
-    for (int N=0; N < (NElements-1); N++) {
-      MagArray[N+1]=MagArray[N]; // Shuffle down one entry
-    } 
-    NMX = (lsm.m.x - MXMean)/MXLeng; // normalized x-component of mag;
-    NMY = (lsm.m.y - MYMean)/MYLeng; // normalized x-component of mag;
-    MagArray[0] = atan2(NMY,NMX);
-    for (int N=0; N < NElements; N++) {
-      MagFloat=MagFloat+MagArray[N]; // Sum for average
-    } 
-    MagFloat = MagFloat/NElements;  // Divide for taking average
-    MagFloat = 25*MagFloat;  // Scale for smoothing out noise and controlling sensitivity
-    MagInt1 = (int) MagFloat; // Cast to int for setting colour
-//    MagFloat = 0.85*MagFloat;  // Divide for creating a set of slower lights
-//    MagInt2 = (int) MagFloat; // Cast to int for setting colour
-//    MagFloat = 0.75*MagFloat;  // Divide for creating a set of slower lights
-//    MagInt3 = (int) MagFloat; // Cast to int for setting colour    
-
-    rainbowcompass(MagInt1,MagInt1,MagInt1);     
+  if (LightsOn == 1) {
+    MagneticRainbow(200);
   }
   delay(10);
 }
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// FUNCTIONS
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // ACCELERATION FUNCTION
 float Acceleration() {   // Measure acceleration
@@ -132,43 +107,105 @@ float Acceleration() {   // Measure acceleration
   return AN;
 }
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// COLOUR MODE FUNCTIONS
-// ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ 
+// RAINBOW COMPASS
 void rainbowcompass(uint8_t C1, uint8_t C2, uint8_t C3) {
   uint16_t i;
   uint16_t j;
   uint16_t k;
 
-  for(i=0; i<strip.numPixels(); i=i+3) {
-    strip.setPixelColor(i, Wheel((C1) & 255)); 
-  }
-  for(j=1; j<strip.numPixels(); j=j+3) {
-    strip.setPixelColor(j, Wheel((C2) & 255)); 
-  }
-  for(k=2; k<strip.numPixels(); k=k+3) {
-    strip.setPixelColor(k, Wheel((C3) & 255)); 
+  for(i=0; i<strip.numPixels(); i=i+1) {
+    strip.setPixelColor(i, Wheel((C1) & 255, 0)); 
   }
   strip.show();
 }
-// ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ 
-// Input a value 0 to 255 to get a color value.
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// COLOUR WHEEL
+// This is a modified version of Adafruit's Colour Wheel function
+// Input a value 0 to 255 and a brightness scaling factor to get a color value.
 // The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
+uint32_t Wheel(byte WheelPos,float B) {
   if(WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, WheelPos * 3, 0);
+    return strip.Color(B*WheelPos * 3, B*(255 - WheelPos * 3), 0);
   } 
   else if(WheelPos < 170) {
     WheelPos -= 85;
-    return strip.Color(0, 255 - WheelPos * 3, WheelPos * 3);
+    return strip.Color(B*(255 - WheelPos * 3), 0, B*WheelPos * 3);
   } 
   else {
     WheelPos -= 170;
-    return strip.Color( WheelPos * 3, 0, 255 - WheelPos * 3);
+    return strip.Color(0, B* WheelPos * 3, B*(255 - WheelPos * 3));
   }
 }
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// MAGNETIC RAINBOW
+void MagneticRainbow(uint8_t wait) {
+  uint16_t i, C;
+  float B; // brightness
 
+  for(C=0; C<256; C++) {
 
+    MagFloat = 0.0;
+    lsm.read(); // update LSM reading
+    // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
+    // SMOOTHING OPERATION
+    // Magnetometer readings have some noise, so we can average over NElements measurements
+    for (int N=0; N < (NElements-1); N++) {  
+      MagArray[N+1]=MagArray[N]; // Shuffle down one entry
+    } 
+    // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
+    // UPDATE DIRECTION
+    NMX = (lsm.m.x - MXMean)/MXLeng; // normalized x-component of mag;
+    NMY = (lsm.m.y - MYMean)/MYLeng; // normalized x-component of mag;
+    MagArray[0] = atan2(NMY,NMX);
+    // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
+    // SMOOTHING OPERATION (a moving average filter)
+    for (int N=0; N < NElements; N++) {
+      MagFloat=MagFloat+MagArray[N]; // Sum for average
+    } 
+    MagFloat = MagFloat/NElements;  // Divide by number of measurements, finds average direction
+    // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~      
+    // NORMALIZE THE DIRECTION NUMBER
+    // We want to scale our direction number to the interval [0,1] to control brightness
+    // The inverse tangent produces a number between -π and +π
+    // So we can divide approximately by pi to get a number on [-1,+1]
+    // Adding 1 and dividing by 2 "should" give us a number on the interval [0,1]
+    // It is possible that numbers will go outside of [0,1] because MXMin, MXMax, etc, may be incorrect
+    // I've divided by something a bit bigger than 2 to be sure that we don't go outside the interval [0,1]
+    MagFloat = (MagFloat/3.14159 + 1)/2.01; 
+    if (MagFloat<OffThreshold) {
+      MagFloat = 0;
+    } 
+    Serial.println(MagFloat);  
+
+    LightsOn = LightSwitch(LightsOn); // check the acceleration to see if lights need to be switched on/off
+
+    if (LightsOn=1){  // if the lights should be on, change their colours
+      for(i=0; i<strip.numPixels(); i++) {
+        strip.setPixelColor(i, Wheel((i+C) & 255,MagFloat));
+      }
+      strip.show();
+      delay(wait);
+    }
+  }
+}
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// LIGHT SWITCH
+int LightSwitch(int LightsOnLocal) {
+  AN = Acceleration(); // measure acceleration
+
+    if (AN >= AThresh) { // if acceleration above threshold, then ...
+    if (LightsOnLocal == 0) { // if lights are off, turn the lights on
+      LightsOnLocal = 1;  // set switch to "on"
+      delay(500);
+    }
+    else {  // if the lights are on, turn the lights off
+      LightsOnLocal = 0;   // set switch to "off"
+      rainbowcompass(0,0,0);     // set lights to off
+      delay(500);
+    }
+  }
+  return LightsOnLocal;
+}
 
 
 
