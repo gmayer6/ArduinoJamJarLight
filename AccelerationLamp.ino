@@ -20,22 +20,22 @@ int LightsOn = 0;
 // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ 
 // ACCEL DATA NORMALIZATIONS
 float OffThreshold = 0.075;
-float AThresh = 1.65;  // Acceleration threshold for switching lights on/off
-float AN; // Normalized acceleration
+float AThresh = 2.5;  // Acceleration threshold for switching lights on/off
+
 // Maximum and minimum accelrations recorded by the LSM303. These values may be specific to your device but can be read off from the serial monitor using the LSM303 Test sketch. 
-float AXMin = -16000;
-float AXMax = 16000;
-float AYMin = -15000;
-float AYMax = 15000;
-float AZMin = -19000;
-float AZMax = 19000;
-// These are parameters that will be used to normalize meaured accelerations
-float AXMean = (AXMax + AXMin)/2;
-float AYMean = (AYMax + AYMin)/2;
-float AZMean = (AZMax + AZMin)/2;
-float AXLeng = (AXMax - AXMin)/2;
-float AYLeng = (AYMax - AYMin)/2;
-float AZLeng = (AZMax - AZMin)/2;
+//float AXMin = -16000;
+//float AXMax = 16000;
+//float AYMin = -15000;
+//float AYMax = 15000;
+//float AZMin = -19000;
+//float AZMax = 19000;
+//// These are parameters that will be used to normalize meaured accelerations
+//float AXMean = (AXMax + AXMin)/2;
+//float AYMean = (AYMax + AYMin)/2;
+//float AZMean = (AZMax + AZMin)/2;
+//float AXLeng = (AXMax - AXMin)/2;
+//float AYLeng = (AYMax - AYMin)/2;
+//float AZLeng = (AZMax - AZMin)/2;
 // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ 
 // MAG DATA NORMALIZATIONS
 // Maximum and minimum magnometer data recorded by the LSM303. These values can be read off from the serial monitor using the LSM303 Test sketch. 
@@ -90,7 +90,7 @@ void loop() {
   LightsOn = LightSwitch(LightsOn);
 
   if (LightsOn == 1) {
-    MagneticRainbow(200);
+    MagneticRainbow(400);
   }
   delay(10);
 }
@@ -100,24 +100,26 @@ void loop() {
 // ACCELERATION FUNCTION
 float Acceleration() {   // Measure acceleration
   lsm.read();
-  float XN = (lsm.a.x - AXMean)/AXLeng; // normalized x-component of acceleration
-  float YN = (lsm.a.y - AYMean)/AYLeng; // normalized y-component of acceleration
-  float ZN = (lsm.a.z - AZMean)/AZLeng; // normalized z-component of acceleration
-  float AN = sqrt(pow(XN,2)+pow(YN,2)+pow(ZN,2));  // normalized magnitude of acceleration vector, should be close to 1 if chip is stationary
+  float XN = (lsm.a.x); // - AXMean)/AXLeng; // normalized x-component of acceleration
+  float YN = (lsm.a.y); // - AYMean)/AYLeng; // normalized y-component of acceleration
+  float ZN = (lsm.a.z); // - AZMean)/AZLeng; // normalized z-component of acceleration
+  float AN = sqrt(pow(XN,2)+pow(YN,2)+pow(ZN,2))/13500;  // normalized magnitude of acceleration vector, should be close to 1 if chip is stationary
+  Serial.println(AN);
+
   return AN;
 }
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// RAINBOW COMPASS
-void rainbowcompass(uint8_t C1, uint8_t C2, uint8_t C3) {
-  uint16_t i;
-  uint16_t j;
-  uint16_t k;
-
-  for(i=0; i<strip.numPixels(); i=i+1) {
-    strip.setPixelColor(i, Wheel((C1) & 255, 0)); 
-  }
-  strip.show();
-}
+//// RAINBOW COMPASS
+//void rainbowcompass(uint8_t C1, uint8_t C2, uint8_t C3) {
+//  uint16_t i;
+//  uint16_t j;
+//  uint16_t k;
+//
+//  for(i=0; i<strip.numPixels(); i=i+1) {
+//    strip.setPixelColor(i, Wheel((C1) & 255, 0)); 
+//  }
+//  strip.show();
+//}
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // COLOUR WHEEL
 // This is a modified version of Adafruit's Colour Wheel function
@@ -143,69 +145,79 @@ void MagneticRainbow(uint8_t wait) {
   float B; // brightness
 
   for(C=0; C<256; C++) {
+    if (LightsOn==1){
 
-    MagFloat = 0.0;
-    lsm.read(); // update LSM reading
-    // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
-    // SMOOTHING OPERATION
-    // Magnetometer readings have some noise, so we can average over NElements measurements
-    for (int N=0; N < (NElements-1); N++) {  
-      MagArray[N+1]=MagArray[N]; // Shuffle down one entry
-    } 
-    // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
-    // UPDATE DIRECTION
-    NMX = (lsm.m.x - MXMean)/MXLeng; // normalized x-component of mag;
-    NMY = (lsm.m.y - MYMean)/MYLeng; // normalized x-component of mag;
-    MagArray[0] = atan2(NMY,NMX);
-    // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
-    // SMOOTHING OPERATION (a moving average filter)
-    for (int N=0; N < NElements; N++) {
-      MagFloat=MagFloat+MagArray[N]; // Sum for average
-    } 
-    MagFloat = MagFloat/NElements;  // Divide by number of measurements, finds average direction
-    // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~      
-    // NORMALIZE THE DIRECTION NUMBER
-    // We want to scale our direction number to the interval [0,1] to control brightness
-    // The inverse tangent produces a number between -π and +π
-    // So we can divide approximately by pi to get a number on [-1,+1]
-    // Adding 1 and dividing by 2 "should" give us a number on the interval [0,1]
-    // It is possible that numbers will go outside of [0,1] because MXMin, MXMax, etc, may be incorrect
-    // I've divided by something a bit bigger than 2 to be sure that we don't go outside the interval [0,1]
-    MagFloat = (MagFloat/3.14159 + 1)/2.01; 
-    if (MagFloat<OffThreshold) {
-      MagFloat = 0;
-    } 
-    Serial.println(MagFloat);  
+      MagFloat = 0.0;
+      lsm.read(); // update LSM reading
+      // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
+      // SMOOTHING OPERATION
+      // Magnetometer readings have some noise, so we can average over NElements measurements
+      for (int N=0; N < (NElements-1); N++) {  
+        MagArray[N+1]=MagArray[N]; // Shuffle down one entry
+      } 
+      // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
+      // UPDATE DIRECTION
+      NMX = (lsm.m.x - MXMean)/MXLeng; // normalized x-component of mag;
+      NMY = (lsm.m.y - MYMean)/MYLeng; // normalized x-component of mag;
+      MagArray[0] = atan2(NMY,NMX);
+      // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  
+      // SMOOTHING OPERATION (a moving average filter)
+      for (int N=0; N < NElements; N++) {
+        MagFloat=MagFloat+MagArray[N]; // Sum for average
+      } 
+      MagFloat = MagFloat/NElements;  // Divide by number of measurements, finds average direction
+      // ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~      
+      // NORMALIZE THE DIRECTION NUMBER
+      // We want to scale our direction number to the interval [0,1] to control brightness
+      // The inverse tangent produces a number between -π and +π
+      // So we can divide approximately by pi to get a number on [-1,+1]
+      // Adding 1 and dividing by 2 "should" give us a number on the interval [0,1]
+      // It is possible that numbers will go outside of [0,1] because MXMin, MXMax, etc, may be incorrect
+      // I've divided by something a bit bigger than 2 to be sure that we don't go outside the interval [0,1]
+      MagFloat = (MagFloat/3.14159 + 1)/2.01; 
+      if (MagFloat<OffThreshold) {
+        MagFloat = 0;
+      } 
+      //    Serial.println(MagFloat);  
 
-    LightsOn = LightSwitch(LightsOn); // check the acceleration to see if lights need to be switched on/off
+      LightsOn = LightSwitch(LightsOn); // check the acceleration to see if lights need to be switched on/off
+Serial.println(LightsOn);
 
-    if (LightsOn=1){  // if the lights should be on, change their colours
-      for(i=0; i<strip.numPixels(); i++) {
-        strip.setPixelColor(i, Wheel((i+C) & 255,MagFloat));
+      if (LightsOn==1){  // if the lights should be on, change their colours
+        for(i=0; i<strip.numPixels(); i++) {
+          strip.setPixelColor(i, Wheel((i+C) & 255,MagFloat));
+        }
+        strip.show();
+        delay(wait);
       }
-      strip.show();
-      delay(wait);
     }
   }
 }
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // LIGHT SWITCH
 int LightSwitch(int LightsOnLocal) {
-  AN = Acceleration(); // measure acceleration
-
-    if (AN >= AThresh) { // if acceleration above threshold, then ...
+  float Accel = Acceleration(); // measure acceleration
+  if (Accel >= AThresh) { // if acceleration above threshold, then ...
     if (LightsOnLocal == 0) { // if lights are off, turn the lights on
       LightsOnLocal = 1;  // set switch to "on"
       delay(500);
     }
     else {  // if the lights are on, turn the lights off
       LightsOnLocal = 0;   // set switch to "off"
-      rainbowcompass(0,0,0);     // set lights to off
-      delay(500);
+      for(uint16_t i=0; i<strip.numPixels(); i++) {
+        strip.setPixelColor(i, strip.Color(0, 0, 0));
+      }      
+      strip.show();     // set lights to off
+      delay(3000);
     }
   }
   return LightsOnLocal;
 }
+
+
+
+
+
 
 
 
